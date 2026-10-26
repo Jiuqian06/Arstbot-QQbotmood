@@ -1,0 +1,5 @@
+﻿name: astrbot_plugin_affection
+desc: 好感度：心情+亲密度+相处天数+承诺+聊天量合成分数，/好感度 可查。
+author: local
+version: 0.1.0
+repo: ""
