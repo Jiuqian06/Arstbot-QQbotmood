@@ -1,0 +1,5 @@
+﻿name: astrbot_plugin_mood
+desc: 情绪状态：心情/亲密度/想黏人的程度，跨轮次保留并注入。
+author: local
+version: 0.1.0
+repo: ""
