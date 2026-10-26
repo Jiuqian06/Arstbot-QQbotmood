@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>好感度插件 · 说明与源码</title>
+<style>
+:root{--bg:#0f1115;--card:#171a21;--line:#242833;--fg:#e6e8ee;--dim:#8b93a7;--acc:#6ea8fe}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.75 -apple-system,"Segoe UI","PingFang SC",sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:40px 22px 80px}
+h1{font-size:26px;margin:0 0 6px}
+.sub{color:var(--dim);margin-bottom:28px}
+h2{font-size:17px;margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:12px 0}
+pre{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font-size:13px;line-height:1.6}
+code{font-family:ui-monospace,Consolas,monospace}
+table{width:100%;border-collapse:collapse;margin:10px 0}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:14px}
+th{color:var(--dim);font-weight:600}
+.bar{font-family:ui-monospace,monospace;color:var(--acc)}
+.btn{background:#22303f;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+.btn:hover{background:#2a3a4d}
+.tag{display:inline-block;background:#1d2733;color:#9fc3ff;border-radius:999px;padding:2px 10px;font-size:12px;margin-right:6px}
+</style>
+</head>
+<body><div class="wrap">
+<h1>好感度插件</h1>
+<div class="sub">给 AstrBot 角色加一个 0-100 的好感度：心情、亲密度、相处天数、承诺、聊天量合成。<br>
+单文件即可阅读与复刻，可直接交给别人的 DSH 看。</div>
+
+<div><span class="tag">AstrBot</span><span class="tag">Python 3.12</span><span class="tag">无需数据库</span><span class="tag">纯文件存储</span></div>
+
+<h2>它长什么样</h2>
+<div class="card"><pre>好感度 72/100 <span class="bar">███████░░░</span> 挺亲近的
+心情 94/100　亲密 99/100
+想黏 0/100（没那个心思）
+相处 2 天　流水 106 条　承诺 2 件</pre></div>
+
+<h2>数据从哪来</h2>
+<table>
+<tr><th>来源</th><th>用途</th></tr>
+<tr><td><code>data/mood/&lt;会话&gt;.json</code></td><td>心情 / 亲密度 / 想黏</td></tr>
+<tr><td><code>data/chat_bridge/messages.jsonl</code></td><td>聊天流水条数</td></tr>
+<tr><td><code>data/memory/promises.md</code></td><td>答应过的事（每行 <code>- </code> 开头）</td></tr>
+</table>
+<div class="sub">三个都是纯文件，没有数据库依赖。</div>
+
+<h2>分数怎么算</h2>
+<div class="card"><pre>基础分（上限 75）
+  亲密度 × 0.40 + 心情 × 0.25 + min(想黏, 100) × 0.10
+
+相处加成（上限 29）
+  min(相处天数 × 1.2, 15)
++ min(流水条数 / 40, 6)
++ min(承诺数 × 2.0, 8)
+
+最终分 = clamp(基础分 + 加成, 0, 100)</pre></div>
+
+<h2>档位</h2>
+<table>
+<tr><th>分数</th><th>说法</th></tr>
+<tr><td>&lt; 20</td><td>还很生疏</td></tr>
+<tr><td>&lt; 40</td><td>有点熟了</td></tr>
+<tr><td>&lt; 60</td><td>相处得还行</td></tr>
+<tr><td>&lt; 75</td><td>挺亲近的</td></tr>
+<tr><td>&lt; 90</td><td>黏上你了</td></tr>
+<tr><td>≥ 90</td><td>离不开了</td></tr>
+</table>
+
+<h2>给模型用的接口</h2>
+<div class="card">除了 <code>/好感度</code> 命令，还注册了 LLM 工具 <code>check_affection</code>：
+被问「你有多喜欢我」「好感度多少」时，先查真实分数，再用自己的口气回答，不会编数字。</div>
+
+<h2>安装</h2>
+<div class="card">
+1. 新建目录 <code>astrbot/data/plugins/astrbot_plugin_affection/</code><br>
+2. 把下面两段分别存成 <code>main.py</code> 和 <code>metadata.yaml</code><br>
+3. 重启 AstrBot（插件只在启动时加载）<br>
+4. 改 <code>FIRST_DAY</code> 为你们认识的日子，改 <code>MOOD_FILE</code> 为自己的会话文件名
+</div>
+
+<h2>metadata.yaml</h2>
+<div class="card"><pre>﻿name: astrbot_plugin_affection
+desc: 好感度：心情+亲密度+相处天数+承诺+聊天量合成分数，/好感度 可查。
+author: local
+version: 0.1.0
+repo: &quot;&quot;
+</pre></div>
+
+<h2>main.py（完整源码）</h2>
+<div class="card" style="padding:10px 20px 20px"><button class="btn" onclick="cp()">复制源码</button>
+<pre id="src">&quot;&quot;&quot;好感度：把心情、亲密度、相处天数、承诺和聊天量合成分数，随时可查。
+
+数据来源：
+- data/mood/&lt;umo&gt;.json      心情/亲密度/欲望（astrbot_plugin_mood 维护）
+- data/chat_bridge/messages.jsonl  聊天条数
+- data/memory/promises.md   答应过的事
+&quot;&quot;&quot;
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from pathlib import Path
+
+from astrbot.api import star
+from astrbot.api.event import AstrMessageEvent, filter
+
+ROOT = Path(r&quot;C:\Users\17509\Desktop\deep seekworkplace\qqbot&quot;)
+MOOD_DIR = ROOT / &quot;astrbot&quot; / &quot;data&quot; / &quot;mood&quot;
+MOOD_FILE = MOOD_DIR / &quot;qqbot_FriendMessage_1750987885.json&quot;
+BRIDGE = ROOT / &quot;astrbot&quot; / &quot;data&quot; / &quot;chat_bridge&quot; / &quot;messages.jsonl&quot;
+PROMISES = ROOT / &quot;astrbot&quot; / &quot;data&quot; / &quot;memory&quot; / &quot;promises.md&quot;
+FIRST_DAY = dt.date(2026, 10, 24)      # 认识的日子
+
+LEVELS = [
+    (20, &quot;还很生疏&quot;),
+    (40, &quot;有点熟了&quot;),
+    (60, &quot;相处得还行&quot;),
+    (75, &quot;挺亲近的&quot;),
+    (90, &quot;黏上你了&quot;),
+    (101, &quot;离不开了&quot;),
+]
+
+
+def _mood() -&gt; dict:
+    try:
+        return json.loads(MOOD_FILE.read_text(encoding=&quot;utf-8-sig&quot;))
+    except Exception:  # noqa: BLE001
+        return {&quot;mood&quot;: 60, &quot;intimacy&quot;: 60, &quot;desire&quot;: 20}
+
+
+def _messages() -&gt; int:
+    try:
+        return sum(1 for line in BRIDGE.read_text(encoding=&quot;utf-8&quot;).splitlines() if line.strip())
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _promises() -&gt; int:
+    try:
+        return sum(1 for ln in PROMISES.read_text(encoding=&quot;utf-8&quot;).splitlines() if ln.startswith(&quot;- &quot;))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _score() -&gt; tuple[int, dict]:
+    st = _mood()
+    mood = int(st.get(&quot;mood&quot;, 60))
+    intimacy = int(st.get(&quot;intimacy&quot;, 60))
+    desire = int(st.get(&quot;desire&quot;, 20))
+    days = max((dt.date.today() - FIRST_DAY).days, 0)
+    msgs = _messages()
+    promises = _promises()
+
+    base = intimacy * 0.40 + mood * 0.25 + min(desire, 100) * 0.10
+    bonus = min(days * 1.2, 15) + min(msgs / 40.0, 6) + min(promises * 2.0, 8)
+    score = int(max(0, min(100, round(base + bonus))))
+    detail = {
+        &quot;心情&quot;: mood,
+        &quot;亲密度&quot;: intimacy,
+        &quot;想黏人&quot;: desire,
+        &quot;认识天数&quot;: days,
+        &quot;流水条数&quot;: msgs,
+        &quot;承诺数&quot;: promises,
+        &quot;加成&quot;: round(bonus, 1),
+    }
+    return score, detail
+
+
+def _level(score: int) -&gt; str:
+    for limit, name in LEVELS:
+        if score &lt; limit:
+            return name
+    return &quot;离不开了&quot;
+
+
+def _bar(score: int) -&gt; str:
+    filled = max(0, min(10, round(score / 10)))
+    return &quot;█&quot; * filled + &quot;░&quot; * (10 - filled)
+
+
+def _card() -&gt; str:
+    score, d = _score()
+    desire = d[&quot;想黏人&quot;]
+    desire_word = (
+        &quot;很想黏你&quot; if desire &gt;= 70 else &quot;有点想亲近&quot; if desire &gt;= 45 else &quot;没那个心思&quot;
+    )
+    lines = [
+        f&quot;好感度 {score}/100 {_bar(score)} {_level(score)}&quot;,
+        f&quot;心情 {d[&#x27;心情&#x27;]}/100　亲密 {d[&#x27;亲密度&#x27;]}/100&quot;,
+        f&quot;想黏 {desire}/100（{desire_word}）&quot;,
+        f&quot;相处 {d[&#x27;认识天数&#x27;]} 天　流水 {d[&#x27;流水条数&#x27;]} 条　承诺 {d[&#x27;承诺数&#x27;]} 件&quot;,
+    ]
+    return &quot;\n&quot;.join(lines)
+
+
+class Main(star.Star):
+    def __init__(self, context: star.Context) -&gt; None:
+        self.context = context
+
+    @filter.command(&quot;好感度&quot;)
+    async def cmd_affection(self, event: AstrMessageEvent):
+        &quot;&quot;&quot;看她现在对你的好感度。&quot;&quot;&quot;
+        yield event.plain_result(_card())
+
+    @filter.llm_tool(name=&quot;check_affection&quot;)
+    async def tool_affection(self, event: AstrMessageEvent) -&gt; str:
+        &quot;&quot;&quot;当你被问到「你有多喜欢我」「好感度多少」时，查一下自己的真实好感度再回答。
+
+        返回的是分数和分项，不要照念，用你自己的口气说。
+        &quot;&quot;&quot;
+        return _card()
+</pre></div>
+
+<div class="sub" style="margin-top:40px">纯本地实现 · 不联网 · 不写数据库 · 只读三个本地文件</div>
+</div>
+<script>
+function cp(){
+  const t=document.getElementById('src').innerText;
+  navigator.clipboard.writeText(t).then(()=>{
+    const b=document.querySelector('.btn'); b.textContent='已复制'; setTimeout(()=>b.textContent='复制源码',1500);
+  });
+}
+</script>
+</body></html>
